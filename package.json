@@ -1,0 +1,15 @@
+{
+  "name": "fitpro",
+  "version": "1.0.0",
+  "description": "FitPro - App de treino personalizado com PWA",
+  "scripts": {
+    "start": "npx serve . -p 3000",
+    "dev": "npx serve . -p 3000 --no-clipboard"
+  },
+  "keywords": ["pwa", "fitness", "treino", "workout"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "^14.2.0"
+  }
+}
