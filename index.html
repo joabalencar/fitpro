@@ -34,6 +34,8 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        window.auth = auth;
+window._signIn = signInWithEmailAndPassword;
 
         // Seu email de personal (admin)
         const ADMIN_EMAIL = "joabsalencar@gmail.com";
