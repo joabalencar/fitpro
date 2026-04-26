@@ -331,7 +331,11 @@ window._signIn = signInWithEmailAndPassword;
         // =============================================
         // TELAS
         // =============================================
-        function showLoginScreen() { showScreen('login'); }
+      function showLoginScreen() { 
+            showScreen('login');
+            document.getElementById('login-btn').innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>Entrar';
+            document.getElementById('login-btn').disabled = false;
+        }
 
         function showAdminPanel() {
             showScreen('admin-home');
@@ -339,6 +343,7 @@ window._signIn = signInWithEmailAndPassword;
         }
 
         function showStudentApp() {
+
             const data = window.fitproState.studentData;
             if (!data) {
                 showScreen('student-app');
@@ -391,8 +396,13 @@ window._signIn = signInWithEmailAndPassword;
             }).join('');
         }
 
-        window.showScreen = showScreen;
+       window.showScreen = showScreen;
         window.loadAlunos = loadAlunos;
+
+        // Expor funções de navegação para o onAuthStateChanged funcionar
+        window._showAdminPanel = showAdminPanel;
+        window._showStudentApp = showStudentApp;
+        window._showLoginScreen = showLoginScreen;
     </script>
 
     <style>
