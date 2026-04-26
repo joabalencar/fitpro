@@ -12,33 +12,31 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged }
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
             from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, updateDoc }
             from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
 
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyDoN4-_yNpmm9vG_WH-sn74DX1rvrmJqbk",
-  authDomain: "fitpro-9d66f.firebaseapp.com",
-  databaseURL: "https://fitpro-9d66f-default-rtdb.firebaseio.com",
-  projectId: "fitpro-9d66f",
-  storageBucket: "fitpro-9d66f.firebasestorage.app",
-  messagingSenderId: "474445647107",
-  appId: "1:474445647107:web:55e262d0c1ec9fe1a3ad36"
-};
+        // =============================================
+        // SUAS CREDENCIAIS FIREBASE
+        // =============================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDoN4-_yNpmm9vG_WH-sn74DX1rvrmJqbk",
+            authDomain: "fitpro-9d66f.firebaseapp.com",
+            projectId: "fitpro-9d66f",
+            storageBucket: "fitpro-9d66f.firebasestorage.app",
+            messagingSenderId: "474445647107",
+            appId: "1:474445647107:web:55e262d0c1ec9fe1a3ad36"
+        };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-        // Email do personal trainer (admin)
-        const ADMIN_EMAIL = "joabsalencar@gmail.com"; // Troque pelo seu email
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Seu email de personal (admin)
+        const ADMIN_EMAIL = "joabsalencar@gmail.com";
 
         // =============================================
         // ESTADO GLOBAL
@@ -80,7 +78,14 @@ const app = initializeApp(firebaseConfig);
             try {
                 await signInWithEmailAndPassword(auth, email, pass);
             } catch(e) {
-                err.textContent = 'Email ou senha incorretos.';
+                console.error('Erro login:', e.code, e.message);
+                if (e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+                    err.textContent = 'Email ou senha incorretos.';
+                } else if (e.code === 'auth/invalid-email') {
+                    err.textContent = 'Email inválido.';
+                } else {
+                    err.textContent = 'Erro: ' + e.message;
+                }
                 btn.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>Entrar';
                 btn.disabled = false;
             }
@@ -109,7 +114,6 @@ const app = initializeApp(firebaseConfig);
             btn.disabled = true;
 
             try {
-                // Cria o usuário no Firebase Auth (sem alterar sessão admin)
                 const resp = await fetch(
                     `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`,
                     {
@@ -121,14 +125,13 @@ const app = initializeApp(firebaseConfig);
                 const data = await resp.json();
                 if (data.error) throw new Error(data.error.message);
 
-                // Salva dados do aluno no Firestore
                 await setDoc(doc(db, "students", data.localId), {
                     nome, email, uid: data.localId,
                     criadoEm: new Date().toISOString(),
                     treinos: {}
                 });
 
-                ok.textContent = `Aluno "${nome}" cadastrado! Compartilhe: Email: ${email} / Senha: ${senha}`;
+                ok.textContent = `✅ "${nome}" cadastrado! Email: ${email} | Senha: ${senha}`;
                 document.getElementById('aluno-nome').value = '';
                 document.getElementById('aluno-email').value = '';
                 document.getElementById('aluno-senha').value = '';
@@ -274,7 +277,7 @@ const app = initializeApp(firebaseConfig);
                     <div class="flex justify-between items-start">
                         <div>
                             <p class="font-semibold text-white">${ex.nome}</p>
-                            <p class="text-xs text-gray-400 mt-0.5">${ex.series}x${ex.reps} · ${ex.descanso}s descanso · ${ex.musculo}</p>
+                            <p class="text-xs text-gray-400 mt-0.5">${ex.series}x${ex.reps} · ${ex.descanso}s · ${ex.musculo}</p>
                             ${ex.obs ? '<p class="text-xs text-cyan-400 mt-1">💡 ' + ex.obs + '</p>' : ''}
                         </div>
                         <button onclick="window.removerExercicio(${i})"
@@ -326,9 +329,7 @@ const app = initializeApp(firebaseConfig);
         // =============================================
         // TELAS
         // =============================================
-        function showLoginScreen() {
-            showScreen('login');
-        }
+        function showLoginScreen() { showScreen('login'); }
 
         function showAdminPanel() {
             showScreen('admin-home');
@@ -428,7 +429,6 @@ const app = initializeApp(firebaseConfig);
             font-weight: 500; font-size: 14px; cursor: pointer; transition: all 0.2s;
         }
         .btn-secondary:hover { background: rgba(255,255,255,0.08); color: white; }
-        .scrollable { overflow-y: auto; -webkit-overflow-scrolling: touch; }
         select.input-field option { background: #1a1a2e; color: white; }
         label { display: block; font-size: 12px; font-weight: 500; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
     </style>
@@ -481,35 +481,22 @@ const app = initializeApp(firebaseConfig);
             </button>
         </div>
     </header>
-
     <div class="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        <!-- Cadastrar aluno -->
         <div class="glass-card rounded-2xl p-5">
             <h2 class="font-bold text-white text-lg mb-4 flex items-center gap-2">
                 <i class="fas fa-user-plus text-cyan-400"></i>Novo Aluno
             </h2>
             <div class="space-y-3">
-                <div>
-                    <label>Nome completo</label>
-                    <input id="aluno-nome" type="text" class="input-field" placeholder="João Silva">
-                </div>
-                <div>
-                    <label>Email de acesso</label>
-                    <input id="aluno-email" type="email" class="input-field" placeholder="joao@email.com">
-                </div>
-                <div>
-                    <label>Senha inicial</label>
-                    <input id="aluno-senha" type="text" class="input-field" placeholder="Mínimo 6 caracteres">
-                </div>
+                <div><label>Nome completo</label><input id="aluno-nome" type="text" class="input-field" placeholder="João Silva"></div>
+                <div><label>Email de acesso</label><input id="aluno-email" type="email" class="input-field" placeholder="joao@email.com"></div>
+                <div><label>Senha inicial</label><input id="aluno-senha" type="text" class="input-field" placeholder="Mínimo 6 caracteres"></div>
                 <p id="cadastro-error" class="text-red-400 text-sm min-h-[18px]"></p>
-                <p id="cadastro-ok" class="text-green-400 text-xs min-h-[18px] bg-green-500/10 rounded-lg px-3 py-2 hidden-empty"></p>
+                <p id="cadastro-ok" class="text-green-400 text-xs min-h-[18px]"></p>
                 <button id="btn-cadastrar" onclick="cadastrarAluno()" class="btn-primary">
                     <i class="fas fa-user-plus mr-2"></i>Cadastrar Aluno
                 </button>
             </div>
         </div>
-
-        <!-- Lista de alunos -->
         <div class="glass-card rounded-2xl p-5">
             <h2 class="font-bold text-white text-lg mb-4 flex items-center gap-2">
                 <i class="fas fa-users text-cyan-400"></i>Meus Alunos
@@ -534,48 +521,29 @@ const app = initializeApp(firebaseConfig);
             </div>
         </div>
     </header>
-
     <div class="max-w-2xl mx-auto px-4 py-6 space-y-5">
-        <!-- Adicionar treino -->
         <div class="glass-card rounded-2xl p-5">
-            <h2 class="font-bold text-white mb-4 flex items-center gap-2">
-                <i class="fas fa-plus-circle text-cyan-400"></i>Adicionar Treino
-            </h2>
+            <h2 class="font-bold text-white mb-4 flex items-center gap-2"><i class="fas fa-plus-circle text-cyan-400"></i>Adicionar Treino</h2>
             <div class="space-y-3">
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label>Dia</label>
                         <select id="treino-dia" class="input-field">
-                            <option value="A">Treino A</option>
-                            <option value="B">Treino B</option>
-                            <option value="C">Treino C</option>
-                            <option value="D">Treino D</option>
-                            <option value="E">Treino E</option>
-                            <option value="F">Treino F</option>
+                            <option value="A">Treino A</option><option value="B">Treino B</option>
+                            <option value="C">Treino C</option><option value="D">Treino D</option>
+                            <option value="E">Treino E</option><option value="F">Treino F</option>
                             <option value="G">Treino G</option>
                         </select>
                     </div>
-                    <div>
-                        <label>Nome do treino</label>
-                        <input id="treino-nome" type="text" class="input-field" placeholder="Peito e Tríceps">
-                    </div>
+                    <div><label>Nome do treino</label><input id="treino-nome" type="text" class="input-field" placeholder="Peito e Tríceps"></div>
                 </div>
-                <div>
-                    <label>Descrição (opcional)</label>
-                    <input id="treino-descricao" type="text" class="input-field" placeholder="Ex: Foco em hipertrofia">
-                </div>
+                <div><label>Descrição (opcional)</label><input id="treino-descricao" type="text" class="input-field" placeholder="Ex: Foco em hipertrofia"></div>
                 <p id="treino-error" class="text-red-400 text-sm min-h-[18px]"></p>
-                <button onclick="salvarTreino()" class="btn-primary">
-                    <i class="fas fa-save mr-2"></i>Salvar Treino
-                </button>
+                <button onclick="salvarTreino()" class="btn-primary"><i class="fas fa-save mr-2"></i>Salvar Treino</button>
             </div>
         </div>
-
-        <!-- Lista treinos -->
         <div class="glass-card rounded-2xl p-5">
-            <h2 class="font-bold text-white mb-4 flex items-center gap-2">
-                <i class="fas fa-list text-cyan-400"></i>Treinos Cadastrados
-            </h2>
+            <h2 class="font-bold text-white mb-4 flex items-center gap-2"><i class="fas fa-list text-cyan-400"></i>Treinos Cadastrados</h2>
             <div id="lista-treinos-aluno" class="space-y-3"></div>
         </div>
     </div>
@@ -588,57 +556,27 @@ const app = initializeApp(firebaseConfig);
             <button onclick="showScreen('admin-treinos')" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
                 <i class="fas fa-arrow-left text-gray-400"></i>
             </button>
-            <div>
-                <p class="text-xs text-gray-500" id="ex-treino-label">Exercícios</p>
-            </div>
+            <p class="text-xs text-gray-400" id="ex-treino-label">Exercícios</p>
         </div>
     </header>
-
     <div class="max-w-2xl mx-auto px-4 py-6 space-y-5">
-        <!-- Adicionar exercício -->
         <div class="glass-card rounded-2xl p-5">
-            <h2 class="font-bold text-white mb-4 flex items-center gap-2">
-                <i class="fas fa-plus text-cyan-400"></i>Adicionar Exercício
-            </h2>
+            <h2 class="font-bold text-white mb-4 flex items-center gap-2"><i class="fas fa-plus text-cyan-400"></i>Adicionar Exercício</h2>
             <div class="space-y-3">
-                <div>
-                    <label>Nome do exercício</label>
-                    <input id="ex-nome" type="text" class="input-field" placeholder="Supino Reto">
-                </div>
+                <div><label>Nome do exercício</label><input id="ex-nome" type="text" class="input-field" placeholder="Supino Reto"></div>
                 <div class="grid grid-cols-3 gap-3">
-                    <div>
-                        <label>Séries</label>
-                        <input id="ex-series" type="number" min="1" max="10" class="input-field" placeholder="4">
-                    </div>
-                    <div>
-                        <label>Reps</label>
-                        <input id="ex-reps" type="number" min="1" max="100" class="input-field" placeholder="12">
-                    </div>
-                    <div>
-                        <label>Descanso (s)</label>
-                        <input id="ex-descanso" type="number" min="10" max="300" class="input-field" placeholder="60">
-                    </div>
+                    <div><label>Séries</label><input id="ex-series" type="number" min="1" max="10" class="input-field" placeholder="4"></div>
+                    <div><label>Reps</label><input id="ex-reps" type="number" min="1" max="100" class="input-field" placeholder="12"></div>
+                    <div><label>Descanso (s)</label><input id="ex-descanso" type="number" min="10" max="300" class="input-field" placeholder="60"></div>
                 </div>
-                <div>
-                    <label>Músculo alvo</label>
-                    <input id="ex-musculo" type="text" class="input-field" placeholder="Peitoral">
-                </div>
-                <div>
-                    <label>Observação / dica (opcional)</label>
-                    <input id="ex-obs" type="text" class="input-field" placeholder="Mantenha as escápulas retraídas">
-                </div>
+                <div><label>Músculo alvo</label><input id="ex-musculo" type="text" class="input-field" placeholder="Peitoral"></div>
+                <div><label>Dica (opcional)</label><input id="ex-obs" type="text" class="input-field" placeholder="Mantenha as escápulas retraídas"></div>
                 <p id="ex-error" class="text-red-400 text-sm min-h-[18px]"></p>
-                <button onclick="adicionarExercicio()" class="btn-primary">
-                    <i class="fas fa-plus mr-2"></i>Adicionar
-                </button>
+                <button onclick="adicionarExercicio()" class="btn-primary"><i class="fas fa-plus mr-2"></i>Adicionar</button>
             </div>
         </div>
-
-        <!-- Lista exercícios -->
         <div class="glass-card rounded-2xl p-5">
-            <h2 class="font-bold text-white mb-4 flex items-center gap-2">
-                <i class="fas fa-dumbbell text-cyan-400"></i>Exercícios
-            </h2>
+            <h2 class="font-bold text-white mb-4 flex items-center gap-2"><i class="fas fa-dumbbell text-cyan-400"></i>Exercícios</h2>
             <div id="lista-exercicios-admin" class="space-y-3"></div>
         </div>
     </div>
@@ -662,7 +600,6 @@ const app = initializeApp(firebaseConfig);
             </button>
         </div>
     </header>
-
     <div class="max-w-2xl mx-auto px-4 py-6">
         <div class="mb-6">
             <h2 class="text-2xl font-display font-bold text-white">Meus Treinos</h2>
