@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0a0a0a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>FitPro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged }
+            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, updateDoc }
+            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDoN4-_yNpmm9vG_WH-sn74DX1rvrmJqbk",
+  authDomain: "fitpro-9d66f.firebaseapp.com",
+  databaseURL: "https://fitpro-9d66f-default-rtdb.firebaseio.com",
+  projectId: "fitpro-9d66f",
+  storageBucket: "fitpro-9d66f.firebasestorage.app",
+  messagingSenderId: "474445647107",
+  appId: "1:474445647107:web:55e262d0c1ec9fe1a3ad36"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+        // Email do personal trainer (admin)
+        const ADMIN_EMAIL = "joabsalencar@gmail.com"; // Troque pelo seu email
+
+        // =============================================
+        // ESTADO GLOBAL
+        // =============================================
+        window.fitproState = { user: null, isAdmin: false, studentData: null };
+
+        // =============================================
+        // AUTH STATE
+        // =============================================
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                window.fitproState.user = user;
+                window.fitproState.isAdmin = user.email === ADMIN_EMAIL;
+                if (window.fitproState.isAdmin) {
+                    showAdminPanel();
+                } else {
+                    const snap = await getDoc(doc(db, "students", user.uid));
+                    window.fitproState.studentData = snap.exists() ? snap.data() : null;
+                    showStudentApp();
+                }
+            } else {
+                window.fitproState.user = null;
+                window.fitproState.isAdmin = false;
+                showLoginScreen();
+            }
+        });
+
+        // =============================================
+        // LOGIN
+        // =============================================
+        window.doLogin = async function() {
+            const email = document.getElementById('login-email').value.trim();
+            const pass = document.getElementById('login-pass').value;
+            const btn = document.getElementById('login-btn');
+            const err = document.getElementById('login-error');
+            err.textContent = '';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Entrando...';
+            btn.disabled = true;
+            try {
+                await signInWithEmailAndPassword(auth, email, pass);
+            } catch(e) {
+                err.textContent = 'Email ou senha incorretos.';
+                btn.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>Entrar';
+                btn.disabled = false;
+            }
+        };
+
+        window.doLogout = async function() {
+            await signOut(auth);
+        };
+
+        // =============================================
+        // ADMIN - CADASTRAR ALUNO
+        // =============================================
+        window.cadastrarAluno = async function() {
+            const nome = document.getElementById('aluno-nome').value.trim();
+            const email = document.getElementById('aluno-email').value.trim();
+            const senha = document.getElementById('aluno-senha').value;
+            const btn = document.getElementById('btn-cadastrar');
+            const err = document.getElementById('cadastro-error');
+            const ok = document.getElementById('cadastro-ok');
+            err.textContent = ''; ok.textContent = '';
+
+            if (!nome || !email || !senha) { err.textContent = 'Preencha todos os campos.'; return; }
+            if (senha.length < 6) { err.textContent = 'Senha mínimo 6 caracteres.'; return; }
+
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Cadastrando...';
+            btn.disabled = true;
+
+            try {
+                // Cria o usuário no Firebase Auth (sem alterar sessão admin)
+                const resp = await fetch(
+                    `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password: senha, returnSecureToken: true })
+                    }
+                );
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error.message);
+
+                // Salva dados do aluno no Firestore
+                await setDoc(doc(db, "students", data.localId), {
+                    nome, email, uid: data.localId,
+                    criadoEm: new Date().toISOString(),
+                    treinos: {}
+                });
+
+                ok.textContent = `Aluno "${nome}" cadastrado! Compartilhe: Email: ${email} / Senha: ${senha}`;
+                document.getElementById('aluno-nome').value = '';
+                document.getElementById('aluno-email').value = '';
+                document.getElementById('aluno-senha').value = '';
+                await loadAlunos();
+            } catch(e) {
+                err.textContent = e.message.includes('EMAIL_EXISTS') ? 'Email já cadastrado.' : 'Erro: ' + e.message;
+            }
+            btn.innerHTML = '<i class="fas fa-user-plus mr-2"></i>Cadastrar Aluno';
+            btn.disabled = false;
+        };
+
+        // =============================================
+        // ADMIN - LISTAR ALUNOS
+        // =============================================
+        window.loadAlunos = async function() {
+            const snap = await getDocs(collection(db, "students"));
+            const lista = document.getElementById('lista-alunos');
+            if (snap.empty) {
+                lista.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">Nenhum aluno cadastrado ainda.</p>';
+                return;
+            }
+            lista.innerHTML = '';
+            snap.forEach(d => {
+                const s = d.data();
+                const totalTreinos = Object.keys(s.treinos || {}).length;
+                lista.innerHTML += `
+                <div class="glass-card rounded-xl p-4 flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-sm">
+                            ${s.nome.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <p class="font-semibold text-white">${s.nome}</p>
+                            <p class="text-xs text-gray-400">${s.email} · ${totalTreinos} treino(s)</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="window.abrirTreinos('${d.id}', '${s.nome}')"
+                            class="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 rounded-lg text-xs font-medium transition-colors border border-cyan-500/20">
+                            <i class="fas fa-dumbbell mr-1"></i>Treinos
+                        </button>
+                        <button onclick="window.excluirAluno('${d.id}', '${s.nome}')"
+                            class="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-xs font-medium transition-colors border border-red-500/20">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>`;
+            });
+        };
+
+        window.excluirAluno = async function(uid, nome) {
+            if (!confirm(`Excluir o aluno "${nome}"?`)) return;
+            await deleteDoc(doc(db, "students", uid));
+            await loadAlunos();
+        };
+
+        // =============================================
+        // ADMIN - MONTAR TREINO DO ALUNO
+        // =============================================
+        window.abrirTreinos = async function(uid, nome) {
+            window._editandoAluno = uid;
+            document.getElementById('treino-aluno-nome').textContent = nome;
+            const snap = await getDoc(doc(db, "students", uid));
+            const treinos = snap.data().treinos || {};
+
+            document.getElementById('treino-dia').value = 'A';
+            document.getElementById('treino-nome').value = '';
+            document.getElementById('treino-descricao').value = '';
+
+            const lista = document.getElementById('lista-treinos-aluno');
+            if (Object.keys(treinos).length === 0) {
+                lista.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">Nenhum treino adicionado ainda.</p>';
+            } else {
+                lista.innerHTML = Object.entries(treinos).map(([dia, t]) => `
+                <div class="glass-card rounded-xl p-4 flex justify-between items-start gap-3">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 rounded text-xs font-bold">TREINO ${dia}</span>
+                            <span class="text-sm font-semibold text-white">${t.nome}</span>
+                        </div>
+                        <p class="text-xs text-gray-400">${t.descricao || 'Sem descrição'}</p>
+                        <p class="text-xs text-gray-500 mt-1">${(t.exercicios||[]).length} exercício(s)</p>
+                    </div>
+                    <div class="flex gap-2 shrink-0">
+                        <button onclick="window.editarExercicios('${uid}','${dia}')"
+                            class="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg text-xs border border-purple-500/20 transition-colors">
+                            <i class="fas fa-list mr-1"></i>Exercícios
+                        </button>
+                        <button onclick="window.removerTreino('${uid}','${dia}')"
+                            class="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-xs border border-red-500/20 transition-colors">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>`).join('');
+            }
+            showScreen('admin-treinos');
+        };
+
+        window.salvarTreino = async function() {
+            const uid = window._editandoAluno;
+            const dia = document.getElementById('treino-dia').value;
+            const nome = document.getElementById('treino-nome').value.trim();
+            const descricao = document.getElementById('treino-descricao').value.trim();
+            const err = document.getElementById('treino-error');
+            err.textContent = '';
+            if (!nome) { err.textContent = 'Informe o nome do treino.'; return; }
+
+            const snap = await getDoc(doc(db, "students", uid));
+            const treinos = snap.data().treinos || {};
+            treinos[dia] = { nome, descricao, exercicios: treinos[dia]?.exercicios || [] };
+            await updateDoc(doc(db, "students", uid), { treinos });
+            await window.abrirTreinos(uid, document.getElementById('treino-aluno-nome').textContent);
+        };
+
+        window.removerTreino = async function(uid, dia) {
+            if (!confirm(`Remover o Treino ${dia}?`)) return;
+            const snap = await getDoc(doc(db, "students", uid));
+            const treinos = snap.data().treinos || {};
+            delete treinos[dia];
+            await updateDoc(doc(db, "students", uid), { treinos });
+            await window.abrirTreinos(uid, document.getElementById('treino-aluno-nome').textContent);
+        };
+
+        // =============================================
+        // ADMIN - EXERCÍCIOS DO TREINO
+        // =============================================
+        window.editarExercicios = async function(uid, dia) {
+            window._editandoDia = dia;
+            document.getElementById('ex-treino-label').textContent = 'Treino ' + dia + ' — ' + document.getElementById('treino-aluno-nome').textContent;
+            const snap = await getDoc(doc(db, "students", uid));
+            const exercicios = snap.data().treinos[dia]?.exercicios || [];
+            renderExercicios(exercicios, uid, dia);
+            showScreen('admin-exercicios');
+        };
+
+        function renderExercicios(exercicios, uid, dia) {
+            const lista = document.getElementById('lista-exercicios-admin');
+            if (exercicios.length === 0) {
+                lista.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">Nenhum exercício adicionado ainda.</p>';
+            } else {
+                lista.innerHTML = exercicios.map((ex, i) => `
+                <div class="glass-card rounded-xl p-4">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="font-semibold text-white">${ex.nome}</p>
+                            <p class="text-xs text-gray-400 mt-0.5">${ex.series}x${ex.reps} · ${ex.descanso}s descanso · ${ex.musculo}</p>
+                            ${ex.obs ? '<p class="text-xs text-cyan-400 mt-1">💡 ' + ex.obs + '</p>' : ''}
+                        </div>
+                        <button onclick="window.removerExercicio(${i})"
+                            class="px-2 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-xs border border-red-500/20 transition-colors">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>`).join('');
+            }
+        }
+
+        window.adicionarExercicio = async function() {
+            const uid = window._editandoAluno;
+            const dia = window._editandoDia;
+            const nome = document.getElementById('ex-nome').value.trim();
+            const series = document.getElementById('ex-series').value;
+            const reps = document.getElementById('ex-reps').value;
+            const descanso = document.getElementById('ex-descanso').value;
+            const musculo = document.getElementById('ex-musculo').value.trim();
+            const obs = document.getElementById('ex-obs').value.trim();
+            const err = document.getElementById('ex-error');
+            err.textContent = '';
+            if (!nome || !series || !reps) { err.textContent = 'Preencha nome, séries e repetições.'; return; }
+
+            const snap = await getDoc(doc(db, "students", uid));
+            const treinos = snap.data().treinos || {};
+            const exercicios = treinos[dia]?.exercicios || [];
+            exercicios.push({ nome, series: parseInt(series), reps: parseInt(reps), descanso: parseInt(descanso)||60, musculo, obs });
+            treinos[dia].exercicios = exercicios;
+            await updateDoc(doc(db, "students", uid), { treinos });
+
+            document.getElementById('ex-nome').value = '';
+            document.getElementById('ex-series').value = '';
+            document.getElementById('ex-reps').value = '';
+            document.getElementById('ex-obs').value = '';
+            renderExercicios(exercicios, uid, dia);
+        };
+
+        window.removerExercicio = async function(idx) {
+            const uid = window._editandoAluno;
+            const dia = window._editandoDia;
+            const snap = await getDoc(doc(db, "students", uid));
+            const treinos = snap.data().treinos || {};
+            treinos[dia].exercicios.splice(idx, 1);
+            await updateDoc(doc(db, "students", uid), { treinos });
+            renderExercicios(treinos[dia].exercicios, uid, dia);
+        };
+
+        // =============================================
+        // TELAS
+        // =============================================
+        function showLoginScreen() {
+            showScreen('login');
+        }
+
+        function showAdminPanel() {
+            showScreen('admin-home');
+            loadAlunos();
+        }
+
+        function showStudentApp() {
+            const data = window.fitproState.studentData;
+            if (!data) {
+                showScreen('student-app');
+                document.getElementById('student-nome').textContent = 'Aluno';
+                document.getElementById('student-treinos').innerHTML =
+                    '<p class="text-gray-400 text-center py-8">Seu personal ainda não cadastrou seus treinos.</p>';
+                return;
+            }
+            document.getElementById('student-nome').textContent = data.nome;
+            showScreen('student-app');
+            renderStudentTreinos(data.treinos || {});
+        }
+
+        function renderStudentTreinos(treinos) {
+            const container = document.getElementById('student-treinos');
+            if (Object.keys(treinos).length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-center py-8">Seu personal ainda não cadastrou seus treinos.</p>';
+                return;
+            }
+            const cores = { A:'cyan', B:'orange', C:'green', D:'purple', E:'pink', F:'yellow', G:'red' };
+            container.innerHTML = Object.entries(treinos).map(([dia, t]) => {
+                const cor = cores[dia] || 'cyan';
+                return `
+                <div class="glass-card rounded-2xl overflow-hidden mb-4">
+                    <div class="px-5 py-4 border-b border-white/5 flex justify-between items-center">
+                        <div>
+                            <span class="text-xs font-bold tracking-wider text-${cor}-400 bg-${cor}-500/10 px-3 py-1 rounded-full border border-${cor}-500/20">TREINO ${dia}</span>
+                            <h3 class="text-lg font-bold text-white mt-2">${t.nome}</h3>
+                            ${t.descricao ? '<p class="text-sm text-gray-400">' + t.descricao + '</p>' : ''}
+                        </div>
+                        <span class="text-gray-500 text-sm">${(t.exercicios||[]).length} ex.</span>
+                    </div>
+                    <div class="p-4 space-y-3">
+                        ${(t.exercicios||[]).map((ex, i) => `
+                        <div class="flex items-start gap-3 p-3 bg-white/5 rounded-xl">
+                            <div class="w-8 h-8 rounded-lg bg-${cor}-500/20 flex items-center justify-center shrink-0 text-${cor}-400 font-bold text-sm">${i+1}</div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-semibold text-white text-sm">${ex.nome}</p>
+                                <div class="flex gap-3 mt-1 flex-wrap">
+                                    <span class="text-xs text-gray-400"><i class="fas fa-layer-group mr-1 text-cyan-500"></i>${ex.series} séries</span>
+                                    <span class="text-xs text-gray-400"><i class="fas fa-redo mr-1 text-purple-500"></i>${ex.reps} reps</span>
+                                    <span class="text-xs text-gray-400"><i class="fas fa-clock mr-1 text-green-500"></i>${ex.descanso}s</span>
+                                    ${ex.musculo ? '<span class="text-xs text-gray-400"><i class="fas fa-bullseye mr-1 text-orange-500"></i>' + ex.musculo + '</span>' : ''}
+                                </div>
+                                ${ex.obs ? '<p class="text-xs text-cyan-400 mt-1 bg-cyan-500/10 px-2 py-1 rounded-lg">💡 ' + ex.obs + '</p>' : ''}
+                            </div>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        window.showScreen = showScreen;
+        window.loadAlunos = loadAlunos;
+    </script>
+
+    <style>
+        * { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .font-display { font-family: 'Orbitron', sans-serif; }
+        body {
+            background: #0a0a0f;
+            background-image: radial-gradient(ellipse at 20% 50%, rgba(6,182,212,0.06) 0%, transparent 60%),
+                              radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.06) 0%, transparent 60%);
+            min-height: 100vh; color: white;
+        }
+        .glass-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(10px);
+        }
+        .screen { display: none; }
+        .screen.active { display: block; }
+        .input-field {
+            width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px; padding: 12px 16px; color: white; font-size: 14px;
+            transition: border-color 0.2s; outline: none;
+        }
+        .input-field:focus { border-color: rgba(6,182,212,0.5); background: rgba(255,255,255,0.07); }
+        .input-field::placeholder { color: rgba(255,255,255,0.3); }
+        .btn-primary {
+            width: 100%; background: linear-gradient(135deg, #0891b2, #0e7490);
+            border: none; border-radius: 12px; padding: 13px; color: white;
+            font-weight: 600; font-size: 15px; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(6,182,212,0.3); }
+        .btn-primary:disabled { opacity: 0.6; transform: none; }
+        .btn-secondary {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px; padding: 11px 20px; color: #94a3b8;
+            font-weight: 500; font-size: 14px; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.08); color: white; }
+        .scrollable { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        select.input-field option { background: #1a1a2e; color: white; }
+        label { display: block; font-size: 12px; font-weight: 500; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+    </style>
+</head>
+<body>
+
+<!-- ========== TELA LOGIN ========== -->
+<div id="screen-login" class="screen active min-h-screen flex items-center justify-center p-6">
+    <div class="w-full max-w-sm">
+        <div class="text-center mb-10">
+            <div class="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-cyan-500/30">
+                <i class="fas fa-dumbbell text-3xl text-white"></i>
+            </div>
+            <h1 class="text-4xl font-display font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">FitPro</h1>
+            <p class="text-gray-400 mt-2 text-sm">Treino personalizado</p>
+        </div>
+        <div class="glass-card rounded-2xl p-6 space-y-4">
+            <div>
+                <label>Email</label>
+                <input id="login-email" type="email" class="input-field" placeholder="seu@email.com" onkeydown="if(event.key==='Enter')doLogin()">
+            </div>
+            <div>
+                <label>Senha</label>
+                <input id="login-pass" type="password" class="input-field" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+            </div>
+            <p id="login-error" class="text-red-400 text-sm text-center min-h-[20px]"></p>
+            <button id="login-btn" onclick="doLogin()" class="btn-primary">
+                <i class="fas fa-sign-in-alt mr-2"></i>Entrar
+            </button>
+        </div>
+        <p class="text-center text-gray-600 text-xs mt-6">Acesso liberado pelo seu personal trainer</p>
+    </div>
+</div>
+
+<!-- ========== ADMIN HOME ========== -->
+<div id="screen-admin-home" class="screen min-h-screen">
+    <header class="sticky top-0 z-50 px-5 py-4 border-b border-white/5" style="background:rgba(10,10,15,0.95);backdrop-filter:blur(20px)">
+        <div class="max-w-2xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-dumbbell text-white text-sm"></i>
+                </div>
+                <div>
+                    <h1 class="font-display font-bold text-cyan-400 text-lg leading-none">FitPro</h1>
+                    <p class="text-xs text-gray-500">Painel do Personal</p>
+                </div>
+            </div>
+            <button onclick="doLogout()" class="btn-secondary px-4 py-2 text-sm">
+                <i class="fas fa-sign-out-alt mr-1"></i>Sair
+            </button>
+        </div>
+    </header>
+
+    <div class="max-w-2xl mx-auto px-4 py-6 space-y-6">
+        <!-- Cadastrar aluno -->
+        <div class="glass-card rounded-2xl p-5">
+            <h2 class="font-bold text-white text-lg mb-4 flex items-center gap-2">
+                <i class="fas fa-user-plus text-cyan-400"></i>Novo Aluno
+            </h2>
+            <div class="space-y-3">
+                <div>
+                    <label>Nome completo</label>
+                    <input id="aluno-nome" type="text" class="input-field" placeholder="João Silva">
+                </div>
+                <div>
+                    <label>Email de acesso</label>
+                    <input id="aluno-email" type="email" class="input-field" placeholder="joao@email.com">
+                </div>
+                <div>
+                    <label>Senha inicial</label>
+                    <input id="aluno-senha" type="text" class="input-field" placeholder="Mínimo 6 caracteres">
+                </div>
+                <p id="cadastro-error" class="text-red-400 text-sm min-h-[18px]"></p>
+                <p id="cadastro-ok" class="text-green-400 text-xs min-h-[18px] bg-green-500/10 rounded-lg px-3 py-2 hidden-empty"></p>
+                <button id="btn-cadastrar" onclick="cadastrarAluno()" class="btn-primary">
+                    <i class="fas fa-user-plus mr-2"></i>Cadastrar Aluno
+                </button>
+            </div>
+        </div>
+
+        <!-- Lista de alunos -->
+        <div class="glass-card rounded-2xl p-5">
+            <h2 class="font-bold text-white text-lg mb-4 flex items-center gap-2">
+                <i class="fas fa-users text-cyan-400"></i>Meus Alunos
+            </h2>
+            <div id="lista-alunos" class="space-y-3">
+                <p class="text-gray-500 text-sm text-center py-4">Carregando...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== ADMIN TREINOS DO ALUNO ========== -->
+<div id="screen-admin-treinos" class="screen min-h-screen">
+    <header class="sticky top-0 z-50 px-5 py-4 border-b border-white/5" style="background:rgba(10,10,15,0.95);backdrop-filter:blur(20px)">
+        <div class="max-w-2xl mx-auto flex items-center gap-3">
+            <button onclick="showScreen('admin-home');loadAlunos()" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                <i class="fas fa-arrow-left text-gray-400"></i>
+            </button>
+            <div>
+                <h1 class="font-bold text-white text-base leading-none" id="treino-aluno-nome">Aluno</h1>
+                <p class="text-xs text-gray-500">Gerenciar treinos</p>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-2xl mx-auto px-4 py-6 space-y-5">
+        <!-- Adicionar treino -->
+        <div class="glass-card rounded-2xl p-5">
+            <h2 class="font-bold text-white mb-4 flex items-center gap-2">
+                <i class="fas fa-plus-circle text-cyan-400"></i>Adicionar Treino
+            </h2>
+            <div class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label>Dia</label>
+                        <select id="treino-dia" class="input-field">
+                            <option value="A">Treino A</option>
+                            <option value="B">Treino B</option>
+                            <option value="C">Treino C</option>
+                            <option value="D">Treino D</option>
+                            <option value="E">Treino E</option>
+                            <option value="F">Treino F</option>
+                            <option value="G">Treino G</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Nome do treino</label>
+                        <input id="treino-nome" type="text" class="input-field" placeholder="Peito e Tríceps">
+                    </div>
+                </div>
+                <div>
+                    <label>Descrição (opcional)</label>
+                    <input id="treino-descricao" type="text" class="input-field" placeholder="Ex: Foco em hipertrofia">
+                </div>
+                <p id="treino-error" class="text-red-400 text-sm min-h-[18px]"></p>
+                <button onclick="salvarTreino()" class="btn-primary">
+                    <i class="fas fa-save mr-2"></i>Salvar Treino
+                </button>
+            </div>
+        </div>
+
+        <!-- Lista treinos -->
+        <div class="glass-card rounded-2xl p-5">
+            <h2 class="font-bold text-white mb-4 flex items-center gap-2">
+                <i class="fas fa-list text-cyan-400"></i>Treinos Cadastrados
+            </h2>
+            <div id="lista-treinos-aluno" class="space-y-3"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== ADMIN EXERCÍCIOS ========== -->
+<div id="screen-admin-exercicios" class="screen min-h-screen">
+    <header class="sticky top-0 z-50 px-5 py-4 border-b border-white/5" style="background:rgba(10,10,15,0.95);backdrop-filter:blur(20px)">
+        <div class="max-w-2xl mx-auto flex items-center gap-3">
+            <button onclick="showScreen('admin-treinos')" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                <i class="fas fa-arrow-left text-gray-400"></i>
+            </button>
+            <div>
+                <p class="text-xs text-gray-500" id="ex-treino-label">Exercícios</p>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-2xl mx-auto px-4 py-6 space-y-5">
+        <!-- Adicionar exercício -->
+        <div class="glass-card rounded-2xl p-5">
+            <h2 class="font-bold text-white mb-4 flex items-center gap-2">
+                <i class="fas fa-plus text-cyan-400"></i>Adicionar Exercício
+            </h2>
+            <div class="space-y-3">
+                <div>
+                    <label>Nome do exercício</label>
+                    <input id="ex-nome" type="text" class="input-field" placeholder="Supino Reto">
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label>Séries</label>
+                        <input id="ex-series" type="number" min="1" max="10" class="input-field" placeholder="4">
+                    </div>
+                    <div>
+                        <label>Reps</label>
+                        <input id="ex-reps" type="number" min="1" max="100" class="input-field" placeholder="12">
+                    </div>
+                    <div>
+                        <label>Descanso (s)</label>
+                        <input id="ex-descanso" type="number" min="10" max="300" class="input-field" placeholder="60">
+                    </div>
+                </div>
+                <div>
+                    <label>Músculo alvo</label>
+                    <input id="ex-musculo" type="text" class="input-field" placeholder="Peitoral">
+                </div>
+                <div>
+                    <label>Observação / dica (opcional)</label>
+                    <input id="ex-obs" type="text" class="input-field" placeholder="Mantenha as escápulas retraídas">
+                </div>
+                <p id="ex-error" class="text-red-400 text-sm min-h-[18px]"></p>
+                <button onclick="adicionarExercicio()" class="btn-primary">
+                    <i class="fas fa-plus mr-2"></i>Adicionar
+                </button>
+            </div>
+        </div>
+
+        <!-- Lista exercícios -->
+        <div class="glass-card rounded-2xl p-5">
+            <h2 class="font-bold text-white mb-4 flex items-center gap-2">
+                <i class="fas fa-dumbbell text-cyan-400"></i>Exercícios
+            </h2>
+            <div id="lista-exercicios-admin" class="space-y-3"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== APP DO ALUNO ========== -->
+<div id="screen-student-app" class="screen min-h-screen pb-8">
+    <header class="sticky top-0 z-50 px-5 py-4 border-b border-white/5" style="background:rgba(10,10,15,0.95);backdrop-filter:blur(20px)">
+        <div class="max-w-2xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-dumbbell text-white text-sm"></i>
+                </div>
+                <div>
+                    <h1 class="font-display font-bold text-cyan-400 text-lg leading-none">FitPro</h1>
+                    <p class="text-xs text-gray-500" id="student-nome">Aluno</p>
+                </div>
+            </div>
+            <button onclick="doLogout()" class="btn-secondary px-4 py-2 text-sm">
+                <i class="fas fa-sign-out-alt mr-1"></i>Sair
+            </button>
+        </div>
+    </header>
+
+    <div class="max-w-2xl mx-auto px-4 py-6">
+        <div class="mb-6">
+            <h2 class="text-2xl font-display font-bold text-white">Meus Treinos</h2>
+            <p class="text-gray-400 text-sm mt-1">Treino personalizado pelo seu personal</p>
+        </div>
+        <div id="student-treinos"></div>
+    </div>
+</div>
+
+<script>
+function showScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+    window.scrollTo(0, 0);
+}
+</script>
+</body>
+</html>
